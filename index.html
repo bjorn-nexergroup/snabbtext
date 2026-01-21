@@ -26,8 +26,7 @@
 
     .field-wrap {
       position: relative;
-      width: 100%;
-      max-width: 44rem;
+      width: 80%;
     }
     textarea {
       width: 40rem;
@@ -103,14 +102,6 @@
       padding: 0.5rem 0.75rem;
       border-bottom: 1px solid var(--border);
     }
-    .panel-search input {
-      width: 100%;
-      padding: 0.5rem 0.6rem;
-      font-size: 0.95rem;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      box-sizing: border-box;
-    }
     .panel-content {
       overflow: auto;
     }
@@ -119,6 +110,7 @@
       padding: 0.25rem 0.25rem 0.5rem 0.25rem;
       margin: 0;
 	  height: 100%;
+    font-family: 'Open Sans', sans-serif;
     }
     .dict-item {
       display: grid;
@@ -165,7 +157,7 @@
     <hr class="ids-divider" />
     <div class="ids-textarea ids-mt-10">
       <label for="textarea-input" class="ids-label">* Aktuellt</label>
-      <textarea id="textarea-input" placeholder="Skriv några ord och tryck ' (apostrof) för att ersätta enligt ordlista..."></textarea>
+      <textarea id="textarea-input" placeholder="Skriv snabbtext ' (apostrof) för att ersätta enligt ordlista..."></textarea>
     </div>
 
     <!-- Indikatorn är nu en knapp som även öppnar panelen -->
@@ -179,25 +171,19 @@
     <div id="panel" class="dictionary-panel" role="dialog" aria-modal="false"
          aria-labelledby="panel-title" hidden>
       <div class="panel-header">
-        <h3 id="panel-title">Ordlista för snabbtext</h3>
+        <h3 id="panel-title" class="ids-heading-s">Ordlista för snabbtext</h3>
         <button class="panel-close" type="button" aria-label="Stäng ordlista">✕</button>
       </div>
-      <div class="panel-search">
-        <input id="search" type="search" placeholder="Sök i ordlista (nyckel eller ersättning)..." />
+      <div class="panel-search ids-input">
+          <input id="search" type="text" class="ids-input__input" placeholder="Sök i ordlista (nyckel eller ersättning)..." />
       </div>
       <div class="panel-content">
         <ul id="dictList" class="dict-list" aria-label="Träffar"></ul>
       </div>
-      <div class="panel-footer">
+      <div class="panel-footer ids-small">
         Klicka på ikonen igen, utanför panelen, eller tryck Esc för att stänga.
       </div>
     </div>
-  </div>
-
-  <div class="hint">
-    Tryck <code>'</code> för att ersätta senaste ordet före markören enligt ordlistan.
-    Ikonen blir <span style="color:#1a7f37;">grön</span> vid ersättning och <span style="color:#d93025;">röd</span> om ingen träff finns.
-    <br/>Klicka på ikonen för att visa en sökbar ordlista.
   </div>
 
   <script>
