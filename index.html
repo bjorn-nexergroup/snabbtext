@@ -70,6 +70,7 @@
       box-shadow: var(--panel-shadow);
       display: flex;
       flex-direction: column;
+      will-change: left, top;
     }
     .panel-header {
       display: flex;
@@ -77,7 +78,12 @@
       gap: 0.5rem;
       padding: 0.6rem 0.75rem;
       border-bottom: 1px solid var(--border);
+      cursor: grab;
+      user-select: none;
+      touch-action: none;
     }
+    .dictionary-panel.dragging .panel-header { cursor: grabbing; }
+    .dictionary-panel.dragging { user-select: none; }
     .panel-header h3 {
       font-size: 1rem;
       margin: 0;
@@ -416,6 +422,65 @@
       const panel = document.getElementById('panel');
       const searchInput = document.getElementById('search');
       const dictList = document.getElementById('dictList');
+      const panelHeader = panel.querySelector('.panel-header');
+
+      // ====== Drag-flyttbar panel ======
+      // När användaren drar i headern gör vi panelen "fixed" och uppdaterar left/top.
+      // Positionen sparas under sessionen (och i localStorage om möjligt).
+      const PANEL_POS_KEY = 'snabbtext.panelPos';
+      let panelPos = null; // { left, top }
+      let dragging = false;
+      let dragOffsetX = 0;
+      let dragOffsetY = 0;
+
+      function readPanelPos() {
+        try {
+          const raw = localStorage.getItem(PANEL_POS_KEY);
+          if (!raw) return null;
+          const parsed = JSON.parse(raw);
+          if (!parsed || typeof parsed.left !== 'number' || typeof parsed.top !== 'number') return null;
+          return parsed;
+        } catch (_) {
+          return null;
+        }
+      }
+
+      function writePanelPos(pos) {
+        panelPos = pos;
+        try {
+          localStorage.setItem(PANEL_POS_KEY, JSON.stringify(pos));
+        } catch (_) {
+          // Ignorera om localStorage inte fungerar.
+        }
+      }
+
+      function clampPanelPos(pos) {
+        const margin = 8;
+        const w = panel.offsetWidth || 0;
+        const h = panel.offsetHeight || 0;
+        const maxLeft = Math.max(margin, window.innerWidth - w - margin);
+        const maxTop = Math.max(margin, window.innerHeight - h - margin);
+        return {
+          left: Math.min(Math.max(pos.left, margin), maxLeft),
+          top: Math.min(Math.max(pos.top, margin), maxTop),
+        };
+      }
+
+      function applyPanelPos(pos) {
+        const p = clampPanelPos(pos);
+        panel.style.position = 'fixed';
+        panel.style.left = p.left + 'px';
+        panel.style.top = p.top + 'px';
+        panel.style.right = 'auto';
+        panel.style.bottom = 'auto';
+      }
+
+      function ensureFixedFromCurrentRect() {
+        const r = panel.getBoundingClientRect();
+        applyPanelPos({ left: r.left, top: r.top });
+      }
+
+      panelPos = readPanelPos();
 
       // ====== Indikator states ======
       function setIndicatorNeutral() {
@@ -439,6 +504,11 @@
         searchInput.value = '';
         panel.hidden = false;
         indikator.setAttribute('aria-expanded', 'true');
+        // Om panelen har dragits tidigare: återställ senaste position.
+        // Vänta en tick så att panelen har fått storlek innan clamp.
+        if (panelPos) {
+          setTimeout(() => applyPanelPos(panelPos), 0);
+        }
         // Första fokus i sökfältet
         setTimeout(() => searchInput.focus(), 0);
       }
@@ -528,6 +598,60 @@
       indikator.addEventListener('click', togglePanel);
       panel.querySelector('.panel-close').addEventListener('click', closePanel);
       searchInput.addEventListener('input', (e) => renderList(e.target.value));
+
+      // Dragga panelen genom att ta tag i headern
+      panelHeader.addEventListener('pointerdown', (e) => {
+        if (panel.hidden) return;
+        if (e.button !== 0) return; // endast vänsterknapp
+        if (e.target.closest('.panel-close')) return; // inte när man klickar på stäng
+
+        // Undvik att dra igång textmarkering / fokus-hopp
+        e.preventDefault();
+
+        dragging = true;
+        panel.classList.add('dragging');
+
+        // Konvertera till fixed med nuvarande visuella position
+        ensureFixedFromCurrentRect();
+        const r = panel.getBoundingClientRect();
+        dragOffsetX = e.clientX - r.left;
+        dragOffsetY = e.clientY - r.top;
+
+        // Fånga pekaren så att vi kan fortsätta dra även om man lämnar headern
+        try {
+          panelHeader.setPointerCapture(e.pointerId);
+        } catch (_) {
+          // Ignorera om inte stöds
+        }
+      });
+
+      panelHeader.addEventListener('pointermove', (e) => {
+        if (!dragging) return;
+        const next = clampPanelPos({
+          left: e.clientX - dragOffsetX,
+          top: e.clientY - dragOffsetY,
+        });
+        applyPanelPos(next);
+        writePanelPos(next);
+      });
+
+      function stopDrag() {
+        if (!dragging) return;
+        dragging = false;
+        panel.classList.remove('dragging');
+      }
+
+      panelHeader.addEventListener('pointerup', stopDrag);
+      panelHeader.addEventListener('pointercancel', stopDrag);
+
+      // Om viewport ändras (t.ex. resize) - håll panelen inom skärmen
+      window.addEventListener('resize', () => {
+        if (panel.hidden) return;
+        if (!panelPos) return;
+        const next = clampPanelPos(panelPos);
+        applyPanelPos(next);
+        writePanelPos(next);
+      });
 
       // Stäng panel vid klick utanför
       document.addEventListener('pointerdown', (e) => {
