@@ -1,0 +1,629 @@
+
+<!doctype html>
+<html lang="sv">
+<head>
+  <meta charset="utf-8" />
+  <title>Textarea med ordlista, indikator och sök</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    @import "styles.css";
+    @import "1177-admin-tokens.css";
+    @import url('https://fonts.googleapis.com/css2?family=Open+Sans:ital,wght@0,300..800;1,300..800&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=Open+Sans:ital,wght@0,300..800;1,300..800&display=swap');
+    
+
+    :root{
+      --ind-neutral: #9bc6f1;  /* aktiverad */
+      --ind-ok:      #73c189;  /* grön */
+      --ind-error:   #e63f34;  /* röd */
+      --border:      #d0d7de;
+      --panel-bg:    #fff;
+      --panel-shadow: 0 8px 24px rgba(0,0,0,0.15);
+    }
+    body {
+      padding: 2rem;
+    }
+
+    .field-wrap {
+      position: relative;
+      width: 100%;
+      max-width: 44rem;
+    }
+    textarea {
+      width: 40rem;
+      min-height: 20rem;
+      padding: 0.75rem 2.25rem 2.2rem 0.75rem; /* extra botten/höger för ikon och panel */
+    }
+
+    /* Ikon (nu som knapp) i nedre högra hörnet */
+    .indicator {
+      position: relative;
+      right: 3rem;
+      bottom: 0.6rem;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: var(--ind-neutral);
+      box-shadow: 0 0 0 2px #fff;
+      border: none;
+      cursor: pointer;
+      padding: 0;
+    }
+    .indicator:focus-visible { outline: 2px solid #005bd3; outline-offset: 2px; }
+    .indicator.ok { background: var(--ind-ok); }
+    .indicator.error { background: var(--ind-error); }
+
+    /* Panel för ordlista */
+    .dictionary-panel[hidden] { display: none; }
+    .dictionary-panel {
+      position: absolute;
+      right: 0.5rem;
+      /* Lägg panelen strax ovanför ikonen (16px ikon + ~10px marginal) */
+      bottom: 2.6rem;
+      z-index: 10;
+      width: min(34rem, calc(100vw - 2rem));
+      max-height: min(50vh, 420px);
+      overflow: hidden;
+      background: var(--panel-bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      box-shadow: var(--panel-shadow);
+      display: flex;
+      flex-direction: column;
+    }
+    .panel-header {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.6rem 0.75rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .panel-header h3 {
+      font-size: 1rem;
+      margin: 0;
+      flex: 1;
+    }
+    .panel-close {
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 1rem;
+      padding: 0.25rem 0.5rem;
+      border-radius: 6px;
+    }
+    .panel-close:focus-visible { outline: 2px solid #005bd3; outline-offset: 2px; }
+
+    .panel-search {
+      padding: 0.5rem 0.75rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .panel-search input {
+      width: 100%;
+      padding: 0.5rem 0.6rem;
+      font-size: 0.95rem;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      box-sizing: border-box;
+    }
+    .panel-content {
+      overflow: auto;
+    }
+    .dict-list {
+      list-style: none;
+      padding: 0.25rem 0.25rem 0.5rem 0.25rem;
+      margin: 0;
+	  height: 100%;
+    }
+    .dict-item {
+      display: grid;
+      grid-template-columns: 1fr auto 3fr;
+      gap: 0.5rem;
+      align-items: center;
+      padding: 0.4rem 0.5rem;
+      border-radius: 6px;
+	  cursor: pointer;
+    }
+	.dict-item:hover {
+		background: var(--ind-neutral) !important;
+	}
+    .dict-item:nth-child(odd) { background: #f9fafb; }
+    .dict-key {
+      font-weight: 600;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .dict-arrow { color: #6b7280; }
+    .dict-value {
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .panel-footer {
+      padding: 0.5rem 0.75rem;
+      border-top: 1px solid var(--border);
+      color: #6b7280;
+      font-size: 0.85rem;
+    }
+
+    .hint { color: #555; margin-top: 0.5rem; font-size: 0.9rem; }
+    .sr-status {
+      position: absolute;
+      width: 1px; height: 1px;
+      padding: 0; margin: -1px;
+      overflow: hidden; clip: rect(0, 0, 0, 0);
+      border: 0;
+    }
+  </style>
+</head>
+<body class="ids--1177-admin ids--light ids-bg-2">
+  
+  <div class="field-wrap">
+    <h1 class="ids-heading-xxl">Lyssna</h1>
+    <hr class="ids-divider" />
+    <div class="ids-textarea ids-mt-10">
+      <label for="textarea-input" class="ids-label">* Aktuellt</label>
+      <textarea id="textarea-input" placeholder="Skriv några ord och tryck ' (apostrof) för att ersätta enligt ordlista..."></textarea>
+    </div>
+
+    <!-- Indikatorn är nu en knapp som även öppnar panelen -->
+    <button id="indikator" class="indicator" type="button"
+            aria-label="Visa ordlista" aria-haspopup="dialog" aria-expanded="false"></button>
+
+    <!-- Skärmläsar-status för indikatorn -->
+    <div id="status" class="sr-status" role="status" aria-live="polite">Neutral</div>
+
+    <!-- Panel för ordlista -->
+    <div id="panel" class="dictionary-panel" role="dialog" aria-modal="false"
+         aria-labelledby="panel-title" hidden>
+      <div class="panel-header">
+        <h3 id="panel-title">Ordlista för snabbtext</h3>
+        <button class="panel-close" type="button" aria-label="Stäng ordlista">✕</button>
+      </div>
+      <div class="panel-search">
+        <input id="search" type="search" placeholder="Sök i ordlista (nyckel eller ersättning)..." />
+      </div>
+      <div class="panel-content">
+        <ul id="dictList" class="dict-list" aria-label="Träffar"></ul>
+      </div>
+      <div class="panel-footer">
+        Klicka på ikonen igen, utanför panelen, eller tryck Esc för att stänga.
+      </div>
+    </div>
+  </div>
+
+  <div class="hint">
+    Tryck <code>'</code> för att ersätta senaste ordet före markören enligt ordlistan.
+    Ikonen blir <span style="color:#1a7f37;">grön</span> vid ersättning och <span style="color:#d93025;">röd</span> om ingen träff finns.
+    <br/>Klicka på ikonen för att visa en sökbar ordlista.
+  </div>
+
+  <script>
+    (function () {
+      // === Ordlista (map) över ord som kan ersättas ===
+      const ordlista = {
+        "ab": "antibiotika",
+        "akm": "akutmottagning",
+        "allm": "allmän",
+        "alt": "alternativ",
+        "amb": "ambulans",
+        "andbesv": "andningsbesvär",
+        "ang": "angående",
+        "anh": "anhörig",
+        "anv": "använda",
+        "apr": "april",
+        "arbt": "arbetsterapeut",
+        "at": "allmäntillstånd",
+        "aug": "augusti",
+        "avd": "avdelning",
+        "avf": "avföring",
+        "barnakm": "barnakutmottagning",
+        "barnj": "barnläkarjour",
+        "barnm": "barnmottagning",
+        "bed": "bedömning",
+        "beh": "behandling",
+        "biv": "biverkning",
+        "bla": "bland annat",
+        "blskr": "blodsocker",
+        "bltr": "blodtryck",
+        "bm": "barnmorska",
+        "bma": "barnmorska",
+        "bmm": "barnmorskemottagning",
+        "brmj": "bröstmjölk",
+        "brsm": "bröstsmärta",
+        "bs": "blodsocker",
+        "bt": "blodtryck",
+        "buksm": "buksmärta",
+        "bup": "barn- och ungdomspsykiatri",
+        "ca": "cirka",
+        "cm": "centimeter",
+        "cov": "covid-19",
+        "dec": "december",
+        "dgr": "dagar",
+        "diab": "diabetes",
+        "diab1": "diabetes typ 1",
+        "diab2": "diabetes typ 2",
+        "diabssk": "diabetessjuksköterska",
+        "div": "diverse",
+        "dläk": "distriktsläkare",
+        "dr": "doktor",
+        "drp": "droppar",
+        "dsk": "distriktssköterska",
+        "dvs": "det vill säga",
+        "dvt": "djup ventrombos",
+        "eg": "egentligen",
+        "em": "eftermiddag",
+        "enl": "enligt",
+        "ev": "eventuellt",
+        "evr": "egenvårdsråd",
+        "fb": "feber",
+        "fd": "före detta",
+        "feb": "februari",
+        "ff": "förmaksflimmer",
+        "ffa": "framför allt",
+        "ffg": "för första gången",
+        "fhm": "Folkhälsomyndigheten",
+        "flj": "familjeläkarjour",
+        "fm": "förmiddag",
+        "fohm": "Folkhälsomyndigheten",
+        "fortf": "fortfarande",
+        "fr": "fredag",
+        "fre": "fredag",
+        "from": "från och med",
+        "föf": "för övrigt frisk",
+        "förl": "förlossning",
+        "ggr": "gånger",
+        "gic": "Giftinformationscentralen",
+        "gm": "genom",
+        "gyn": "gynekolog",
+        "gynakm": "gynekologisk akutmottagning",
+        "gynj": "gynekologläkarjour",
+        "gynm": "gynekologmottagning",
+        "hb": "hemoglobin",
+        "hc": "hälsocentral",
+        "hemsjv": "hemsjukvård",
+        "hemtj": "hemtjänst",
+        "hl": "husläkare",
+        "hlm": "husläkarmottagning",
+        "hm": "helgmottagning",
+        "hsf": "havandeskapsförgiftning",
+        "ht": "hypertoni",
+        "hudm": "hudmottagning",
+        "hv": "huvudvärk",
+        "hö": "höger",
+        "ik": "ingen känd",
+        "ika": "ingen känd allergi",
+        "illam": "illamående",
+        "inf": "infektion",
+        "infj": "infektionsläkarjour",
+        "infm": "infektionsmottagning",
+        "info": "information",
+        "inhal": "inhalation",
+        "iom": "i och med",
+        "isf": "i så fall",
+        "jan": "januari",
+        "jc": "jourcentral",
+        "jfr": "jämför",
+        "jl": "jourläkare",
+        "jlc": "jourläkarcentral",
+        "jul": "juli",
+        "jun": "juni",
+        "khm": "kvälls- och helgmottagning",
+        "kir": "kirurg",
+        "kirj": "kirurgläkarjour",
+        "kirm": "kirurgimottagning",
+        "kk": "kvinnokliniken",
+        "kl": "klockan",
+        "kräk": "kräkningar",
+        "käkkir": "käkkirurgi",
+        "leg": "legitimerad",
+        "lkm": "läkemedel",
+        "lkminfo": "läkemedelsinformation",
+        "lö": "lördag",
+        "lör": "lördag",
+        "maa": "med anledning av",
+        "mar": "mars",
+        "md": "medicin",
+        "medi": "medicinsk",
+        "medj": "medicinläkarjour",
+        "medm": "medicinmottagning",
+        "mens": "menstruation",
+        "mhj": "med hjälp av",
+        "mht": "med hänsyn till",
+        "mkt": "mycket",
+        "mm": "millimeter",
+        "mott": "mottagning",
+        "msr": "mamma som ringer",
+        "mvc": "mödravårdscentral",
+        "må": "måndag",
+        "mån": "måndag",
+        "ngr": "några",
+        "ngt": "något",
+        "njbinf": "njurbäckeninflammation",
+        "nli": "nedre luftvägsinfektion",
+        "nov": "november",
+        "nr": "nummer",
+        "o": "och",
+        "obs": "observera",
+        "okt": "oktober",
+        "on": "onsdag",
+        "ons": "onsdag",
+        "op": "operation",
+        "ortj": "ortopedläkarjour",
+        "ortm": "ortopedimottagning",
+        "ortop": "ortoped",
+        "osv": "och så vidare",
+        "oxå": "också",
+        "pat": "patienten",
+        "pats": "patientens",
+        "pc": "penicillin",
+        "psr": "pappa som ringer",
+        "psyk": "psykiatri",
+        "psykakm": "psykakutmottagning",
+        "psykm": "psykiatrimottagning",
+        "pv": "primärvård",
+        "pvj": "primärvårdsjour",
+        "pvjt": "primärvårdsjourstid",
+        "påvat": "påverkat allmäntillstånd",
+        "ra": "reumatism",
+        "rec": "recept",
+        "rek": "rekommendera",
+        "rtg": "röntgen",
+        "sep": "september",
+        "sjd": "sjukdom",
+        "sjg": "sjukgymnast",
+        "spec": "specialist",
+        "ssk": "sjuksköterska",
+        "sti": "könsmottagning",
+        "stud": "studerande",
+        "sö": "söndag",
+        "sön": "söndag",
+        "tandl": "tandläkare",
+        "tandlj": "tandläkarjour",
+        "tbl": "tablett",
+        "tex": "till exempel",
+        "ti": "tisdag",
+        "tis": "tisdag",
+        "tn": "till natten",
+        "to": "torsdag",
+        "tor": "torsdag",
+        "tp": "temperatur",
+        "tsm": "tillsammans",
+        "ua": "utan anmärkning",
+        "ul": "ultraljud",
+        "ungm": "ungdomsmottagning",
+        "usk": "undersköterska",
+        "utv": "utveckling",
+        "uvi": "urinvägsinfektion",
+        "vab": "vård av barn",
+        "vac": "vaccinerad",
+        "vb": "vid behov",
+        "vc": "vårdcentral",
+        "ve": "vätskeersättning",
+        "vgr": "Västra Götalandsregionen",
+        "vtn": "vatten",
+        "vä": "vänster",
+        "åb": "återbesök",
+        "ögoninfl": "ögoninflammation",
+        "ögonj": "ögonläkarjour",
+        "ögonssk": "ögonsjuksköterska",
+        "öli": "övre luftvägsinfektion",
+        "önh": "öron- näs- och hals",
+        "önhj": "öron- näs- och halsläkarjour"
+      };
+
+
+      const textarea = document.getElementById('textarea-input');
+      const indikator = document.getElementById('indikator');
+      const statusEl  = document.getElementById('status');
+
+      const panel = document.getElementById('panel');
+      const searchInput = document.getElementById('search');
+      const dictList = document.getElementById('dictList');
+
+      // ====== Indikator states ======
+      function setIndicatorNeutral() {
+        indikator.classList.remove('ok', 'error');
+        statusEl.textContent = 'Neutral';
+      }
+      function setIndicatorOk() {
+        indikator.classList.remove('error');
+        indikator.classList.add('ok');
+        statusEl.textContent = 'Ersättning utförd';
+      }
+      function setIndicatorError() {
+        indikator.classList.remove('ok');
+        indikator.classList.add('error');
+        statusEl.textContent = 'Ingen träff i ordlistan';
+      }
+
+      // ====== Sökbar panel ======
+      function openPanel() {
+        renderList(''); // se till att rendera allt vid öppning
+        searchInput.value = '';
+        panel.hidden = false;
+        indikator.setAttribute('aria-expanded', 'true');
+        // Första fokus i sökfältet
+        setTimeout(() => searchInput.focus(), 0);
+      }
+      function closePanel() {
+        panel.hidden = true;
+        indikator.setAttribute('aria-expanded', 'false');
+        // Återgå fokus till indikator (rimlig kontroll)
+        indikator.focus({ preventScroll: true });
+      }
+      function togglePanel() {
+        panel.hidden ? openPanel() : closePanel();
+      }
+
+	  function replaceText(ersättning) {
+		const start = textarea.selectionStart;
+          const end = textarea.selectionEnd;
+          const value = textarea.value;
+
+          const left = value.slice(0, start);
+          const right = value.slice(end);
+
+          // Hitta senaste ordet före markören (bokstäver/siffror/underscore), Unicode-stöd
+          const match = left.match(/[\p{L}\p{N}_']+$/u);
+
+          // Om inget ord hittas, starta vid markör
+          const ordStartIndex = match ? match.index : start;
+
+          // Bygg ny text: allt före ordet + ersättningen + resten
+          const newLeft = left.slice(0, ordStartIndex) + ersättning;
+          const newValue = newLeft + right;
+          textarea.value = newValue;
+
+          // Placera markören direkt efter ersättningen
+          const newCaretPos = newLeft.length;
+          textarea.setSelectionRange(newCaretPos, newCaretPos);
+
+		  closePanel();
+		  setIndicatorNeutral();
+		  textarea.focus();
+	  }
+
+      // Rendera listan baserat på filter
+      function renderList(filterText) {
+        const f = (filterText || '').trim().toLowerCase();
+        const entries = Object.entries(ordlista);
+
+        // Filtrera på nyckel eller värde
+        const filtered = f
+          ? entries.filter(([k, v]) => k.toLowerCase().includes(f) || (v + '').toLowerCase().includes(f))
+          : entries;
+
+        // Bygg DOM
+        dictList.innerHTML = '';
+        if (filtered.length === 0) {
+          const li = document.createElement('li');
+          li.className = 'dict-item';
+          li.textContent = 'Inga träffar';
+          dictList.appendChild(li);
+          return;
+        }
+
+        for (const [key, val] of filtered) {
+          const li = document.createElement('li');
+          li.className = 'dict-item';
+		  li.onclick = () => replaceText(val);	
+
+          const k = document.createElement('div');
+          k.className = 'dict-key';
+          k.textContent = key;
+
+          const arrow = document.createElement('div');
+          arrow.className = 'dict-arrow';
+          arrow.textContent = '→';
+
+          const v = document.createElement('div');
+          v.className = 'dict-value';
+          v.textContent = val;
+
+          li.appendChild(k);
+          li.appendChild(arrow);
+          li.appendChild(v);
+          dictList.appendChild(li);
+        }
+      }
+
+      // Händelser för panel
+      indikator.addEventListener('click', togglePanel);
+      panel.querySelector('.panel-close').addEventListener('click', closePanel);
+      searchInput.addEventListener('input', (e) => renderList(e.target.value));
+
+      // Stäng panel vid klick utanför
+      document.addEventListener('pointerdown', (e) => {
+        if (panel.hidden) return;
+        const withinPanel = panel.contains(e.target);
+        const onIndicator = indikator.contains(e.target);
+        if (!withinPanel && !onIndicator) {
+          closePanel();
+        }
+      });
+
+      // Stäng panel på Escape
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && !panel.hidden) {
+          e.stopPropagation();
+          closePanel();
+        }
+      });
+
+      // ====== Apostrof-ersättning i textarea ======
+
+      textarea.addEventListener('keydown', function (e) {
+        if (e.key === "'") {
+
+          const start = textarea.selectionStart;
+          const end = textarea.selectionEnd;
+          const value = textarea.value;
+
+          const left = value.slice(0, start);
+          const right = value.slice(end);
+
+          // Hitta senaste ordet före markören (bokstäver/siffror/underscore), Unicode-stöd
+          const match = left.match(/[\p{L}\p{N}_]+$/u);
+
+          if (!match) {
+            setIndicatorError();
+            return;
+          }
+
+          const ordStartIndex = match.index;
+          const originalOrd = match[0];
+          const nyckel = originalOrd.toLowerCase();
+
+          if (!(nyckel in ordlista)) {
+            setIndicatorError();
+            return;
+          }
+
+		  e.preventDefault(); // förhindra att ' skrivs in
+          const ersättningBas = ordlista[nyckel];
+		  const ersättning = appliceraKasering(originalOrd, ersättningBas);
+
+          // Bygg ny text: allt före ordet + ersättningen + resten
+          const newLeft = left.slice(0, ordStartIndex) + ersättning;
+          const newValue = newLeft + right;
+          textarea.value = newValue;
+
+          // Placera markören direkt efter ersättningen
+          const newCaretPos = newLeft.length;
+          textarea.setSelectionRange(newCaretPos, newCaretPos);
+
+          setIndicatorOk();
+        } else {
+			setIndicatorNeutral();
+		}
+		
+      });
+
+	  
+/**
+       * Bevarar case-stil från originalOrd till ersättning:
+       *  - alla gemener → ersättning i gemener
+       *  - alla versaler → ersättning i versaler
+       *  - initial versal → ersättning med initial versal
+       *  - annars: returnera ersättning oförändrad
+       */
+      function appliceraKasering(originalOrd, ersättning) {
+        if (!originalOrd) return ersättning;
+
+        const isAllLower = originalOrd === originalOrd.toLowerCase();
+        const isAllUpper = originalOrd === originalOrd.toUpperCase();
+        const isTitleCase =
+          originalOrd[0] === originalOrd[0].toUpperCase() &&
+          originalOrd.slice(1) === originalOrd.slice(1).toLowerCase();
+
+        if (isAllLower) return ersättning.toLowerCase();
+        if (isAllUpper) return ersättning.toUpperCase();
+        if (isTitleCase)
+          return ersättning.charAt(0).toUpperCase() + ersättning.slice(1).toLowerCase();
+        return ersättning;
+      }
+
+
+      // Init
+      setIndicatorNeutral();
+    })();
+  </script>
+</body>
+</html>
