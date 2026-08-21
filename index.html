@@ -39,6 +39,7 @@
       position: relative;
       right: 3rem;
       bottom: 0.6rem;
+      z-index: 30;
       width: 18px;
       height: 18px;
       border-radius: 50%;
@@ -657,53 +658,127 @@
         }
       });
 
-      // ====== Apostrof-ersättning i textarea ======
+      // ====== Suggest + Return-ersättning i textarea ======
+      const textareaStyles = getComputedStyle(textarea);
+      const textareaContainer = textarea.parentElement;
+      if (textareaContainer) {
+        textareaContainer.style.position = 'relative';
+      }
+      const suggestionBubble = document.createElement('div');
+      suggestionBubble.style.cssText = `
+        position:absolute; z-index:20; display:none; pointer-events:none;
+        color:#555; background:#e6f0fc; border:1px solid #111827; border-radius:999px;
+        padding:2px 8px; font-size:0.875rem; line-height:1.2;
+        white-space:nowrap; max-width:calc(100% - 16px); overflow:hidden; text-overflow:ellipsis;
+      `;
+      suggestionBubble.style.font = textareaStyles.font;
+
+      const caretMirror = document.createElement('div');
+      caretMirror.style.cssText = `
+        position:absolute; visibility:hidden; pointer-events:none;
+        white-space:pre-wrap; word-break:break-word; overflow:hidden;
+      `;
+      caretMirror.style.font = textareaStyles.font;
+      caretMirror.style.padding = textareaStyles.padding;
+      caretMirror.style.lineHeight = textareaStyles.lineHeight;
+      caretMirror.style.letterSpacing = textareaStyles.letterSpacing;
+      caretMirror.style.textTransform = textareaStyles.textTransform;
+      caretMirror.style.textIndent = textareaStyles.textIndent;
+      caretMirror.style.wordSpacing = textareaStyles.wordSpacing;
+      caretMirror.style.tabSize = textareaStyles.tabSize;
+
+      if (textareaContainer) {
+        textareaContainer.appendChild(caretMirror);
+        textareaContainer.appendChild(suggestionBubble);
+      }
+
+      function syncSuggestionBounds() {
+        caretMirror.style.left = textarea.offsetLeft + 'px';
+        caretMirror.style.top = textarea.offsetTop + 'px';
+        caretMirror.style.width = textarea.offsetWidth + 'px';
+        caretMirror.style.height = textarea.offsetHeight + 'px';
+      }
+
+      function getCurrentSuggestion() {
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+        if (start !== end) return null;
+        const value = textarea.value;
+        const left = value.slice(0, start);
+        const right = value.slice(end);
+        const match = left.match(/[\p{L}\p{N}_]+$/u);
+        if (!match) return null;
+        const ordStartIndex = match.index;
+        const originalOrd = match[0];
+        const nyckel = originalOrd.toLowerCase();
+        if (!(nyckel in ordlista)) return null;
+        const ersättning = appliceraKasering(originalOrd, ordlista[nyckel]);
+        if (ersättning === originalOrd) return null;
+        return { start, end, left, right, ordStartIndex, ersättning };
+      }
+
+      function getCaretCoords(index) {
+        syncSuggestionBounds();
+        caretMirror.textContent = '';
+        caretMirror.append(document.createTextNode(textarea.value.slice(0, index)));
+        const marker = document.createElement('span');
+        marker.textContent = '\u200b';
+        caretMirror.appendChild(marker);
+        const markerRect = marker.getBoundingClientRect();
+        const mirrorRect = caretMirror.getBoundingClientRect();
+        const lineHeight = markerRect.height || parseFloat(textareaStyles.lineHeight) || 16;
+        return {
+          x: markerRect.left - mirrorRect.left - textarea.scrollLeft,
+          y: markerRect.top - mirrorRect.top - textarea.scrollTop,
+          lineHeight
+        };
+      }
+
+      function updateSuggestionOverlay() {
+        const suggestion = getCurrentSuggestion();
+        if (!suggestion) {
+          suggestionBubble.style.display = 'none';
+          setIndicatorNeutral();
+          return;
+        }
+        const caret = getCaretCoords(suggestion.start);
+        const bubbleTop = textarea.offsetTop + caret.y + caret.lineHeight + 4;
+        const bubbleLeft = textarea.offsetLeft + caret.x;
+        suggestionBubble.textContent = '↩ ' + suggestion.ersättning;
+        suggestionBubble.style.display = 'block';
+        const minLeft = textarea.offsetLeft + 4;
+        const maxLeft = textarea.offsetLeft + textarea.offsetWidth - suggestionBubble.offsetWidth - 4;
+        suggestionBubble.style.left = `${Math.max(minLeft, Math.min(bubbleLeft, maxLeft))}px`;
+        suggestionBubble.style.top = `${bubbleTop}px`;
+      }
+
+      textarea.addEventListener('input', updateSuggestionOverlay);
+      textarea.addEventListener('click', updateSuggestionOverlay);
+      textarea.addEventListener('select', updateSuggestionOverlay);
+      textarea.addEventListener('keyup', updateSuggestionOverlay);
+      textarea.addEventListener('scroll', updateSuggestionOverlay);
+      window.addEventListener('resize', () => {
+        syncSuggestionBounds();
+        updateSuggestionOverlay();
+      });
 
       textarea.addEventListener('keydown', function (e) {
-        if (e.key === "'") {
-
-          const start = textarea.selectionStart;
-          const end = textarea.selectionEnd;
-          const value = textarea.value;
-
-          const left = value.slice(0, start);
-          const right = value.slice(end);
-
-          // Hitta senaste ordet före markören (bokstäver/siffror/underscore), Unicode-stöd
-          const match = left.match(/[\p{L}\p{N}_]+$/u);
-
-          if (!match) {
-            setIndicatorError();
-            return;
-          }
-
-          const ordStartIndex = match.index;
-          const originalOrd = match[0];
-          const nyckel = originalOrd.toLowerCase();
-
-          if (!(nyckel in ordlista)) {
-            setIndicatorError();
-            return;
-          }
-
-		  e.preventDefault(); // förhindra att ' skrivs in
-          const ersättningBas = ordlista[nyckel];
-		  const ersättning = appliceraKasering(originalOrd, ersättningBas);
-
-          // Bygg ny text: allt före ordet + ersättningen + resten
-          const newLeft = left.slice(0, ordStartIndex) + ersättning;
-          const newValue = newLeft + right;
-          textarea.value = newValue;
-
-          // Placera markören direkt efter ersättningen
-          const newCaretPos = newLeft.length;
-          textarea.setSelectionRange(newCaretPos, newCaretPos);
-
-          setIndicatorOk();
-        } else {
-			setIndicatorNeutral();
-		}
-		
+        if (e.key !== 'Enter') {
+          return;
+        }
+        const suggestion = getCurrentSuggestion();
+        if (!suggestion) {
+          setIndicatorError();
+          return;
+        }
+        e.preventDefault();
+        const newLeft = suggestion.left.slice(0, suggestion.ordStartIndex) + suggestion.ersättning;
+        const newValue = newLeft + suggestion.right;
+        textarea.value = newValue;
+        const newCaretPos = newLeft.length;
+        textarea.setSelectionRange(newCaretPos, newCaretPos);
+        updateSuggestionOverlay();
+        setIndicatorOk();
       });
 
 	  
@@ -733,6 +808,7 @@
 
       // Init
       setIndicatorNeutral();
+      updateSuggestionOverlay();
     })();
   </script>
 </body>
